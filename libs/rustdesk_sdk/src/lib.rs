@@ -31,6 +31,10 @@ fn with_unwind_default<T: Default, F: FnOnce() -> T>(f: F) -> T {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_default()
 }
 
+fn with_unwind_null<T, F: FnOnce() -> *mut T>(f: F) -> *mut T {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or(ptr::null_mut())
+}
+
 fn c_str_to_string(s: *const c_char) -> String {
     if s.is_null() {
         return String::new();
@@ -138,7 +142,7 @@ pub extern "C" fn rd_update_temporary_password() -> bool {
 
 #[no_mangle]
 pub extern "C" fn rd_get_permanent_password() -> *mut c_char {
-    with_unwind_default(|| to_c_string(hbb_common::config::Config::get_permanent_password()))
+    with_unwind_null(|| to_c_string(hbb_common::config::Config::get_permanent_password()))
 }
 
 #[no_mangle]
@@ -152,7 +156,7 @@ pub extern "C" fn rd_set_permanent_password(password: *const c_char) -> bool {
 
 #[no_mangle]
 pub extern "C" fn rd_get_option(key: *const c_char) -> *mut c_char {
-    with_unwind_default(|| {
+    with_unwind_null(|| {
         let k = c_str_to_string(key);
         to_c_string(hbb_common::config::Config::get_option(&k))
     })
@@ -171,7 +175,7 @@ pub extern "C" fn rd_set_option(key: *const c_char, value: *const c_char) -> boo
 
 #[no_mangle]
 pub extern "C" fn rd_get_all_options() -> *mut c_char {
-    with_unwind_default(|| {
+    with_unwind_null(|| {
         let opts = hbb_common::config::Config::get_options();
         let json = serde_json::to_string(&opts).unwrap_or_else(|_| "{}".to_string());
         to_c_string(json)
@@ -180,7 +184,7 @@ pub extern "C" fn rd_get_all_options() -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn rd_get_rendezvous_server(ms_timeout: u64) -> *mut c_char {
-    with_unwind_default(|| {
+    with_unwind_null(|| {
         let res = run_async(rustdesk::common::get_rendezvous_server(ms_timeout))
             .unwrap_or_else(|| ("".to_string(), Vec::new(), false));
         let json = serde_json::json!({
@@ -207,7 +211,7 @@ pub extern "C" fn rd_test_rendezvous_server() -> bool {
 
 #[no_mangle]
 pub extern "C" fn rd_get_id() -> *mut c_char {
-    with_unwind_default(|| {
+    with_unwind_null(|| {
         init_app_name_from_env();
         to_c_string(hbb_common::config::Config::get_id())
     })
@@ -215,7 +219,7 @@ pub extern "C" fn rd_get_id() -> *mut c_char {
 
 #[no_mangle]
 pub extern "C" fn rd_get_temporary_password() -> *mut c_char {
-    with_unwind_default(|| {
+    with_unwind_null(|| {
         init_app_name_from_env();
         to_c_string(hbb_common::password_security::temporary_password())
     })

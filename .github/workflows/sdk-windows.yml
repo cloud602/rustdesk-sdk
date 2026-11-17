@@ -20,7 +20,7 @@ on:
 env:
   RUST_VERSION: "1.75"
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
-  VCPKG_COMMIT_ID: "6f29f12e82a8293156836ad81cc9bf5af41fe836"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
   LLVM_VERSION: "15.0.6"
 
 jobs:
