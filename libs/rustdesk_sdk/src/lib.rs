@@ -3,8 +3,22 @@ use librustdesk as rustdesk;
 use std::ffi::CString;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Once;
 
 static SERVER_STARTED: AtomicBool = AtomicBool::new(false);
+
+fn init_app_name_from_env() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let Ok(app_name) = std::env::var("RUSTDESK_APPNAME") else {
+            return;
+        };
+        let app_name = app_name.trim();
+        if !app_name.is_empty() {
+            *hbb_common::config::APP_NAME.write().unwrap() = app_name.to_owned();
+        }
+    });
+}
 
 fn to_c_string(s: String) -> *mut c_char {
     match CString::new(s) {
@@ -37,7 +51,10 @@ where
 
 #[no_mangle]
 pub extern "C" fn rd_global_init() -> bool {
-    with_unwind_default(|| rustdesk::common::global_init())
+    with_unwind_default(|| {
+        init_app_name_from_env();
+        rustdesk::common::global_init()
+    })
 }
 
 #[no_mangle]
@@ -60,6 +77,7 @@ pub extern "C" fn rd_start_server(is_server: bool, no_server: bool) -> bool {
 #[no_mangle]
 pub extern "C" fn rd_start_server_safe() -> bool {
     with_unwind_default(|| {
+        init_app_name_from_env();
         if !rustdesk::common::global_init() {
             return false;
         }
@@ -75,6 +93,20 @@ pub extern "C" fn rd_start_server_safe() -> bool {
         });
         SERVER_STARTED.store(true, Ordering::SeqCst);
         true
+    })
+}
+
+// Start the connection manager IPC listener inside this process (headless).
+// The controlled side hands file transfer / file clipboard to the CM over `_cm`;
+// embedded hosts have no UI process, so the listener has to live here.
+#[no_mangle]
+pub extern "C" fn rd_start_cm() -> bool {
+    with_unwind_default(|| {
+        init_app_name_from_env();
+        if !rustdesk::common::global_init() {
+            return false;
+        }
+        rustdesk::start_headless_cm()
     })
 }
 
@@ -129,6 +161,7 @@ pub extern "C" fn rd_get_option(key: *const c_char) -> *mut c_char {
 #[no_mangle]
 pub extern "C" fn rd_set_option(key: *const c_char, value: *const c_char) -> bool {
     with_unwind_default(|| {
+        init_app_name_from_env();
         let k = c_str_to_string(key);
         let v = c_str_to_string(value);
         hbb_common::config::Config::set_option(k, v);
@@ -174,12 +207,18 @@ pub extern "C" fn rd_test_rendezvous_server() -> bool {
 
 #[no_mangle]
 pub extern "C" fn rd_get_id() -> *mut c_char {
-    with_unwind_default(|| to_c_string(hbb_common::config::Config::get_id()))
+    with_unwind_default(|| {
+        init_app_name_from_env();
+        to_c_string(hbb_common::config::Config::get_id())
+    })
 }
 
 #[no_mangle]
 pub extern "C" fn rd_get_temporary_password() -> *mut c_char {
-    with_unwind_default(|| to_c_string(hbb_common::password_security::temporary_password()))
+    with_unwind_default(|| {
+        init_app_name_from_env();
+        to_c_string(hbb_common::password_security::temporary_password())
+    })
 }
 
 #[no_mangle]

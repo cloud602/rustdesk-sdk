@@ -632,6 +632,108 @@ impl<T: InvokeUiCM> IpcTaskRunner<T> {
     }
 }
 
+/// No-UI connection manager used when the RustDesk core is embedded as an SDK.
+///
+/// The controlled side always hands file-transfer / file-clipboard work to the
+/// connection manager over the `_cm` IPC channel. A GUI or flutter build owns that
+/// listener; an embedded host has no UI process at all, so the listener has to live
+/// inside the SDK process. All UI callbacks are no-ops here.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[derive(Clone)]
+struct HeadlessUiCM;
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+impl InvokeUiCM for HeadlessUiCM {
+    fn add_connection(&self, _client: &Client) {}
+
+    fn remove_connection(&self, _id: i32, _close: bool) {}
+
+    fn new_message(&self, _id: i32, _text: String) {}
+
+    fn change_theme(&self, _dark: String) {}
+
+    fn change_language(&self) {}
+
+    fn show_elevation(&self, _show: bool) {}
+
+    fn update_voice_call_state(&self, _client: &Client) {}
+
+    fn file_transfer_log(&self, _action: &str, _log: &str) {}
+}
+
+/// Headless flavour of [`start_ipc`]: same listener, but never calls `quit_cm()`.
+///
+/// `quit_cm()` ends in `platform::quit_gui()`, which is `std::process::exit(0)` on
+/// Windows and terminates NSApp on macOS. In an embedded host that would kill the
+/// host application whenever the listener stops, so the exit is dropped here.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+#[tokio::main(flavor = "current_thread")]
+async fn start_ipc_headless<T: InvokeUiCM>(cm: ConnectionManager<T>) {
+    #[cfg(target_os = "windows")]
+    ContextSend::enable(option2bool(
+        OPTION_ENABLE_FILE_TRANSFER,
+        &Config::get_option(OPTION_ENABLE_FILE_TRANSFER),
+    ));
+    match ipc::new_listener("_cm").await {
+        Ok(mut incoming) => {
+            // `new_listener` opens the socket to everyone (0o777) because the desktop
+            // build splits CM and server across sessions/users. An embedded agent does
+            // not: narrow it to the owning user so no other local process can drive
+            // file transfer / file clipboard through the CM.
+            #[cfg(not(windows))]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let path = Config::ipc_path("_cm");
+                if let Err(err) =
+                    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))
+                {
+                    log::warn!("headless cm: failed to restrict {} to 0600: {}", path, err);
+                }
+            }
+            log::info!("headless cm: listening on _cm");
+            while let Some(result) = incoming.next().await {
+                match result {
+                    Ok(stream) => {
+                        log::debug!("headless cm: got new connection");
+                        tokio::spawn(IpcTaskRunner::<T>::ipc_task(
+                            Connection::new(stream),
+                            cm.clone(),
+                        ));
+                    }
+                    Err(err) => {
+                        log::error!("headless cm: couldn't get cm client: {:?}", err);
+                    }
+                }
+            }
+        }
+        Err(err) => {
+            log::error!("headless cm: failed to start cm ipc server: {}", err);
+        }
+    }
+    log::warn!("headless cm: ipc listener stopped");
+}
+
+/// Start the in-process headless connection manager once.
+///
+/// Returns `true` when the listener thread has been spawned (or is already running).
+/// The listener itself owns a dedicated tokio runtime on its own thread, so it never
+/// interacts with the caller's async context.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub fn start_headless_cm() -> bool {
+    static STARTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if STARTED.swap(true, Ordering::SeqCst) {
+        log::debug!("headless cm: already started");
+        return true;
+    }
+    std::thread::spawn(|| {
+        start_ipc_headless(ConnectionManager {
+            ui_handler: HeadlessUiCM,
+        });
+    });
+    log::info!("headless cm: listener thread spawned");
+    true
+}
+
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tokio::main(flavor = "current_thread")]
 pub async fn start_ipc<T: InvokeUiCM>(cm: ConnectionManager<T>) {

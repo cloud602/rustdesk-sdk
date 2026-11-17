@@ -59,6 +59,9 @@ mod tray;
 mod updater;
 
 mod ui_cm_interface;
+/// Headless connection manager entry point for embedded SDK hosts.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+pub use ui_cm_interface::start_headless_cm;
 mod ui_interface;
 mod ui_session_interface;
 

@@ -2051,7 +2051,7 @@ impl Connection {
             }
 
             #[cfg(not(any(target_os = "android", target_os = "ios")))]
-            // self.try_start_cm_ipc();
+            self.try_start_cm_ipc();
 
             #[cfg(not(target_os = "linux"))]
             let err_msg = "".to_owned();
@@ -4083,7 +4083,9 @@ async fn start_ipc(
     } else {
         #[allow(unused_mut)]
         #[allow(unused_assignments)]
-        let mut args = vec!["--cm"];
+        // Embedded SDK hosts must never be relaunched as a UI process: `--cm` in a
+        // non-flutter build would start a control panel inside the host executable.
+        let mut args = vec!["--cm-no-ui"];
         #[allow(unused_mut)]
         #[cfg(target_os = "linux")]
         let mut user = None;
