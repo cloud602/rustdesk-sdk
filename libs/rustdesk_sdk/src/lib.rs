@@ -234,3 +234,22 @@ pub extern "C" fn rd_free_c_string(s: *mut c_char) {
         drop(CString::from_raw(s));
     }
 }
+
+/// 当前「已认证」的连接数（0 = 没有人在远程本机）。
+///
+/// 宿主用它判断远程协助会话是否真的结束：RustDesk SDK 没有会话结束回调，
+/// 而 `AUTHED_CONNS` 由 RAII 维护（认证成功时 push，连接对象 Drop 时 retain 移除），
+/// 是「此刻还有没有人连着」的权威来源。断线后 1~2 秒内即可读到 0。
+///
+/// 返回 -1 表示查询失败（panic / 锁中毒）：调用方必须当成「未知」，
+/// 不能当成「已断开」，否则会在会话进行中把横幅误收起。
+#[no_mangle]
+pub extern "C" fn rd_authed_conn_count() -> i32 {
+    match std::panic::catch_unwind(|| match rustdesk::AUTHED_CONNS.lock() {
+        Ok(guard) => guard.len() as i32,
+        Err(_) => -1,
+    }) {
+        Ok(count) => count,
+        Err(_) => -1,
+    }
+}
