@@ -1,0 +1,87 @@
+name: Build RustDesk SDK (macOS arm64)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - ".github/**"
+      - "docs/**"
+      - "README.md"
+      - "res/**"
+      - "appimage/**"
+      - "flatpak/**"
+
+env:
+  RUST_VERSION: "1.75"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  VCPKG_DEFAULT_TRIPLET: arm64-osx
+  VCPKG_DEFAULT_HOST_TRIPLET: arm64-osx
+
+jobs:
+  build-sdk-macos:
+    name: aarch64-apple-darwin (dylib)
+    runs-on: macos-14
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: macos-sdk
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgDirectory: ${{ runner.temp }}/vcpkg
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        shell: bash
+        run: |
+          if ! $VCPKG_ROOT/vcpkg \
+            install \
+            --triplet arm64-osx \
+            --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/buildtrees" -name "*.log" -maxdepth 3 | while read -r _1; do
+              echo "$_1:"
+              echo "======"
+              tail -n 80 "$_1"
+              echo "======"
+              echo ""
+            done
+            exit 1
+          fi
+
+      - name: Build RustDesk SDK (dylib)
+        shell: bash
+        run: |
+          cargo build -p rustdesk_sdk --release --target aarch64-apple-darwin
+
+      - name: Upload SDK dylib
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdesk-sdk-macos-arm64
+          path: target/aarch64-apple-darwin/release/librustdesk_sdk.dylib
