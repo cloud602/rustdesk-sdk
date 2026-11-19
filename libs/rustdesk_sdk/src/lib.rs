@@ -217,6 +217,27 @@ pub extern "C" fn rd_get_id() -> *mut c_char {
     })
 }
 
+/// Force the identity of this instance.
+///
+/// The auto id is derived from the NIC MAC, which every RustDesk core on the same
+/// machine computes identically — an embedded host and an installed client would
+/// register the same id on the same rendezvous server and take turns kicking each
+/// other out. Hosts that need a distinct identity call this before starting the
+/// server; `Config::set_id` re-encrypts the value into `enc_id` and stores it, so
+/// the id stays stable on later runs.
+#[no_mangle]
+pub extern "C" fn rd_set_id(id: *const c_char) -> bool {
+    with_unwind_default(|| {
+        init_app_name_from_env();
+        let value = c_str_to_string(id).trim().to_owned();
+        if value.is_empty() || value.len() > 64 {
+            return false;
+        }
+        hbb_common::config::Config::set_id(&value);
+        true
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn rd_get_temporary_password() -> *mut c_char {
     with_unwind_null(|| {
