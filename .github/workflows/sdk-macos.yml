@@ -51,6 +51,12 @@ jobs:
         with:
           prefix-key: macos-sdk
 
+      - name: Install native build tools
+        shell: bash
+        run: |
+          brew install nasm
+          nasm -v
+
       - name: Setup vcpkg with Github Actions binary cache
         uses: lukka/run-vcpkg@v11
         with:
